@@ -10,14 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout version manager repo
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Get backend version from pom.xml
         id: backend
         run: |
           url="https://raw.githubusercontent.com/sdi25-source/SDI-Backend/main/pom.xml"
-          version=$(curl -s $url | grep -oPm1 "(?<=<version>)[^<]+")
+          version=$(curl -s $url | sed -n 's:.*<version>\(.*\)</version>.*:\1:p' | head -1)
           echo "backend_version=$version" >> $GITHUB_OUTPUT
 
       - name: Get frontend version from package.json
