@@ -1,0 +1,77 @@
+name: Update Global Version
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [update-version]
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout version manager repo
+        uses: actions/checkout@v3
+
+      - name: Get backend version from pom.xml on GitHub
+        id: backend_version
+        run: |
+          BACKEND_POM_URL="https://raw.githubusercontent.com/sdi25-source/SDI-Backend/main/pom.xml"
+          backendVersion=$(curl -s $BACKEND_POM_URL | grep -oPm1 "(?<=<version>)[^<]+")
+          echo "BACKEND_VERSION=$backendVersion" >> $GITHUB_ENV
+          echo "Backend version: $backendVersion"
+
+      - name: Get frontend version from package.json on GitHub
+        id: frontend_version
+        run: |
+          FRONTEND_PKG_URL="https://raw.githubusercontent.com/sdi25-source/SDI-Frontend/main/package.json"
+          frontendVersion=$(curl -s $FRONTEND_PKG_URL | jq -r '.version')
+          echo "FRONTEND_VERSION=$frontendVersion" >> $GITHUB_ENV
+          echo "Frontend version: $frontendVersion"
+
+      - name: Read old global version
+        id: read_old_version
+        run: |
+          if [ -f version-global.txt ]; then
+            echo "OLD_GLOBAL_VERSION=$(cat version-global.txt)" >> $GITHUB_OUTPUT
+          else
+            echo "OLD_GLOBAL_VERSION=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compute new global version and artifact name
+        id: compute_version
+        run: |
+          new_version="${FRONTEND_VERSION}-${BACKEND_VERSION}"
+          artifact_name="f${FRONTEND_VERSION}-b${BACKEND_VERSION}"
+          echo "NEW_GLOBAL_VERSION=$new_version" >> $GITHUB_OUTPUT
+          echo "ARTIFACT_NAME=$artifact_name" >> $GITHUB_OUTPUT
+          echo "New global version: $new_version"
+          echo "Artifact name: $artifact_name"
+
+      - name: Create version files
+        run: |
+          echo "${{ steps.compute_version.outputs.NEW_GLOBAL_VERSION }}" > version-global.txt
+          echo "Frontend Version: ${{ env.FRONTEND_VERSION }}" > version-info.txt
+          echo "Backend Version: ${{ env.BACKEND_VERSION }}" >> version-info.txt
+          echo "Global Version: ${{ steps.compute_version.outputs.NEW_GLOBAL_VERSION }}" >> version-info.txt
+
+      - name: Update version file and commit
+        if: steps.read_old_version.outputs.OLD_GLOBAL_VERSION != steps.compute_version.outputs.NEW_GLOBAL_VERSION
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add version-global.txt
+          git commit -m "Update global version to ${{ steps.compute_version.outputs.NEW_GLOBAL_VERSION }}"
+          git push
+
+      - name: Create Git tag
+        if: steps.read_old_version.outputs.OLD_GLOBAL_VERSION != steps.compute_version.outputs.NEW_GLOBAL_VERSION
+        run: |
+          git tag "global-v${{ steps.compute_version.outputs.NEW_GLOBAL_VERSION }}"
+          git push origin --tags
+
+      - name: Upload version artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.compute_version.outputs.ARTIFACT_NAME }}
+          path: version-info.txt
